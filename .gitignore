@@ -216,3 +216,24 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Streamlit secrets
+.streamlit/secrets.toml
+
+# Environment variables / secrets
+.env
+.env.*
+
+# Local exported user/session files
+credit_tracker_session_*.json
+*.json.backup
+
+# Private/local notes
+notes.txt
+Credit_payoff_app-Guidelines copy.rtf
+
+# Local databases
+*.db
+*.sqlite3
+
+.DS_Store

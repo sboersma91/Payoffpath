@@ -1,0 +1,31 @@
+{
+  "apr": 0.1849,
+  "projected_monthly_payment": 2000,
+  "default_variable_spend": 0,
+  "safety_payment_buffer": 100,
+  "max_simulation_months": 120,
+  "statement_close_day": 1,
+  "payment_due_day": 25,
+  "recurring": [
+    {
+      "name": "Subscription",
+      "amount": 21.4
+    },
+    {
+      "name": "Phone",
+      "amount": 25.0
+    },
+    {
+      "name": "Community Group",
+      "amount": 9.0
+    },
+    {
+      "name": "Gym Membership",
+      "amount": 79.2
+    },
+    {
+      "name": "Streaming Service",
+      "amount": 25.0
+    }
+  ]
+}
