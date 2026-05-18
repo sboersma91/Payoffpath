@@ -62,6 +62,9 @@ if "config" not in st.session_state:
 if "transactions" not in st.session_state:
     st.session_state.transactions = []
 
+if "show_onboarding" not in st.session_state:
+    st.session_state.show_onboarding = True
+
 # ==================================================
 # DEVELOPER SEED INITIALIZATION
 # ==================================================
@@ -150,37 +153,33 @@ export_snapshot = {
 
 export_json = json.dumps(export_snapshot, indent=2)
 
-
-with st.expander("Settings"):
-    # Config Editor
-    st.subheader("Settings")
-    st.caption("Configure forecasting assumptions and recurring expenses.")
+if st.session_state.show_onboarding:
     st.info(
-        "Session settings are isolated to this browser session unless exported."
+        "This app helps estimate how long one credit card may take to pay off while accounting for payments, ongoing spending, recurring charges, and interest."
     )
-
-    # ==================================================
-    # IMPORT / EXPORT
-    # ==================================================
-
-    st.divider()
-
-    st.subheader("Import / Export")
-
+    st.markdown("### Quick Steps")
+    st.markdown(
+        """
+- Set your starting balance (first time only).
+- Add recent spending and payment activity.
+- Enter your projected monthly payment and variable spend.
+- Run the simulation and compare payoff timelines.
+- Save your plan so you can reload it later.
+        """
+    )
+    st.markdown("### Example Statement Mapping")
     st.caption(
-        "Sessions are private to your browser and temporary unless exported. "
-        "Download your current plan to save progress. "
-        "You can later restore the plan by importing the saved JSON file."
+        "Map statement numbers directly: current balance → Starting Balance, planned monthly payment → Projected Monthly Payment, expected new purchases → Variable Monthly Spend, and APR (%) from your statement terms."
     )
-
-    st.download_button(
-        label="⬇️ Download Current Plan",
-        data=export_json,
-        file_name=f"credit_tracker_session_{datetime.today().strftime('%Y%m%d_%H%M%S')}.json",
-        mime="application/json",
-        help="Download a complete debt-plan snapshot including transactions and forecasting configuration.",
+    st.markdown("### Forecast Disclaimer")
+    st.caption(
+        "This forecast is an estimate, not financial advice. Results depend on the accuracy of the values you enter and can change with future spending and payments."
     )
+    if st.button("Got it — hide this guide"):
+        st.session_state.show_onboarding = False
+        st.rerun()
 
+with st.expander("Load Saved Plan"):
     uploaded_snapshot = st.file_uploader(
         "⬆️ Upload Saved Plan",
         type=["json"],
@@ -237,6 +236,14 @@ with st.expander("Settings"):
             st.error(
                 "An unexpected error occurred while importing the debt plan."
             )
+
+with st.expander("Settings"):
+    # Config Editor
+    st.subheader("Settings")
+    st.caption("Configure forecasting assumptions and recurring expenses.")
+    st.info(
+        "Session settings are isolated to this browser session unless exported."
+    )
 
     col_s1 = st.columns(1)[0]
 
@@ -733,3 +740,16 @@ if run_simulation_clicked:
 
     st.subheader("Payoff Duration Comparison")
     st.pyplot(payoff_chart)
+
+with st.expander("Save Your Plan"):
+    st.caption(
+        "Sessions are private to your browser and temporary unless exported. "
+        "Download your current plan to save progress."
+    )
+    st.download_button(
+        label="⬇️ Download Current Plan",
+        data=export_json,
+        file_name=f"credit_tracker_session_{datetime.today().strftime('%Y%m%d_%H%M%S')}.json",
+        mime="application/json",
+        help="Download a complete debt-plan snapshot including transactions and forecasting configuration.",
+    )
