@@ -62,6 +62,9 @@ if "config" not in st.session_state:
 if "transactions" not in st.session_state:
     st.session_state.transactions = []
 
+if "show_onboarding" not in st.session_state:
+    st.session_state.show_onboarding = True
+
 # ==================================================
 # DEVELOPER SEED INITIALIZATION
 # ==================================================
@@ -150,37 +153,33 @@ export_snapshot = {
 
 export_json = json.dumps(export_snapshot, indent=2)
 
-
-with st.expander("Settings"):
-    # Config Editor
-    st.subheader("Settings")
-    st.caption("Configure forecasting assumptions and recurring expenses.")
+if st.session_state.show_onboarding:
     st.info(
-        "Session settings are isolated to this browser session unless exported."
+        "This app helps estimate how long one credit card may take to pay off while accounting for payments, ongoing spending, recurring charges, and interest."
     )
-
-    # ==================================================
-    # IMPORT / EXPORT
-    # ==================================================
-
-    st.divider()
-
-    st.subheader("Import / Export")
-
+    st.markdown("### Quick Steps")
+    st.markdown(
+        """
+- Set your starting balance (first time only).
+- Add recent spending and payment activity.
+- Enter your projected monthly payment and variable spend.
+- Run the simulation and compare payoff timelines.
+- Save your plan so you can reload it later.
+        """
+    )
+    st.markdown("### Example Statement Mapping")
     st.caption(
-        "Sessions are private to your browser and temporary unless exported. "
-        "Download your current plan to save progress. "
-        "You can later restore the plan by importing the saved JSON file."
+        "Map statement numbers directly: current balance → Starting Balance, planned monthly payment → Projected Monthly Payment, expected new purchases → Variable Monthly Spend, and APR (%) from your statement terms."
     )
-
-    st.download_button(
-        label="⬇️ Download Current Plan",
-        data=export_json,
-        file_name=f"credit_tracker_session_{datetime.today().strftime('%Y%m%d_%H%M%S')}.json",
-        mime="application/json",
-        help="Download a complete debt-plan snapshot including transactions and forecasting configuration.",
+    st.markdown("### Forecast Disclaimer")
+    st.caption(
+        "This forecast is an estimate, not financial advice. Results depend on the accuracy of the values you enter and can change with future spending and payments."
     )
+    if st.button("Got it — hide this guide"):
+        st.session_state.show_onboarding = False
+        st.rerun()
 
+with st.expander("Load Saved Plan"):
     uploaded_snapshot = st.file_uploader(
         "⬆️ Upload Saved Plan",
         type=["json"],
@@ -238,6 +237,14 @@ with st.expander("Settings"):
                 "An unexpected error occurred while importing the debt plan."
             )
 
+with st.expander("Settings"):
+    # Config Editor
+    st.subheader("Settings")
+    st.caption("Configure forecasting assumptions.")
+    st.info(
+        "Session settings are isolated to this browser session unless exported."
+    )
+
     col_s1 = st.columns(1)[0]
 
     with col_s1:
@@ -246,56 +253,15 @@ with st.expander("Settings"):
             value=st.session_state.config["apr"] * 100,
         ) / 100
 
-    st.write("### Recurring Charges")
-
-
-    rows = st.session_state.recurring_edit
-
-    # Header
-    col_h1, col_h2, col_h3 = st.columns([2, 1, 0.5])
-    col_h1.markdown("**Name**")
-    col_h2.markdown("**Amount**")
-    col_h3.markdown("**Action**")
-
-    # Rows
-    for i, r in enumerate(rows):
-        col_r1, col_r2, col_r3 = st.columns([2, 1, 0.5])
-
-        name = col_r1.text_input(f"name_{i}", value=r.get("name", ""), label_visibility="collapsed")
-        amount = col_r2.number_input(f"amount_{i}", value=float(r.get("amount", 0.0)), label_visibility="collapsed")
-
-        if col_r3.button("❌", key=f"del_{i}"):
-            rows.pop(i)
-            st.session_state.recurring_edit = rows
-            st.rerun()
-
-        r["name"] = name
-        r["amount"] = amount
-
-    # Add new row
-    col_a1, col_a2 = st.columns([1, 3])
-    if col_a1.button("+ Add Recurring"):
-        rows.append({"name": "", "amount": 0.0})
-        st.session_state.recurring_edit = rows
-        st.rerun()
-
     # Save settings
     if st.button("Save Settings"):
 
         updated_config = deepcopy(st.session_state.config)
 
         updated_config["apr"] = new_apr
-        updated_config["recurring"] = deepcopy(
-            st.session_state.recurring_edit
-        )
 
         # Replace session config atomically
         st.session_state.config = updated_config
-
-        # Refresh editable session copy
-        st.session_state.recurring_edit = deepcopy(
-            updated_config["recurring"]
-        )
 
         st.success("Session settings updated")
         st.rerun()
@@ -557,6 +523,61 @@ else:
 
 run_simulation_clicked = st.button("Run Simulation")
 
+with st.expander("Recurring Monthly Charges"):
+    st.caption(
+        "Add or update fixed monthly charges like subscriptions, insurance, and utility bills."
+    )
+    st.metric("Total Recurring Monthly Charges", f"${recurring_total:,.2f}")
+
+    rows = st.session_state.recurring_edit
+
+    col_h1, col_h2, col_h3 = st.columns([2, 1, 0.5])
+    col_h1.markdown("**Charge**")
+    col_h2.markdown("**Amount**")
+    col_h3.markdown("**Action**")
+
+    for i, r in enumerate(rows):
+        col_r1, col_r2, col_r3 = st.columns([2, 1, 0.5])
+
+        name = col_r1.text_input(
+            f"name_{i}",
+            value=r.get("name", ""),
+            label_visibility="collapsed",
+        )
+        amount = col_r2.number_input(
+            f"amount_{i}",
+            value=float(r.get("amount", 0.0)),
+            label_visibility="collapsed",
+        )
+
+        if col_r3.button("❌", key=f"del_{i}"):
+            rows.pop(i)
+            st.session_state.recurring_edit = rows
+            st.rerun()
+
+        r["name"] = name
+        r["amount"] = amount
+
+    col_a1, col_a2 = st.columns([1, 3])
+    if col_a1.button("+ Add Recurring"):
+        rows.append({"name": "", "amount": 0.0})
+        st.session_state.recurring_edit = rows
+        st.rerun()
+
+    if st.button("Save Recurring Charges"):
+        updated_config = deepcopy(st.session_state.config)
+        updated_config["recurring"] = deepcopy(
+            st.session_state.recurring_edit
+        )
+
+        st.session_state.config = updated_config
+        st.session_state.recurring_edit = deepcopy(
+            updated_config["recurring"]
+        )
+
+        st.success("Recurring charges updated")
+        st.rerun()
+
 # ==================================================
 # DEVELOPER AUTO-SIMULATION
 # ==================================================
@@ -733,3 +754,16 @@ if run_simulation_clicked:
 
     st.subheader("Payoff Duration Comparison")
     st.pyplot(payoff_chart)
+
+with st.expander("Save Your Plan"):
+    st.caption(
+        "Sessions are private to your browser and temporary unless exported. "
+        "Download your current plan to save progress."
+    )
+    st.download_button(
+        label="⬇️ Download Current Plan",
+        data=export_json,
+        file_name=f"credit_tracker_session_{datetime.today().strftime('%Y%m%d_%H%M%S')}.json",
+        mime="application/json",
+        help="Download a complete debt-plan snapshot including transactions and forecasting configuration.",
+    )
