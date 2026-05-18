@@ -240,7 +240,7 @@ with st.expander("Load Saved Plan"):
 with st.expander("Settings"):
     # Config Editor
     st.subheader("Settings")
-    st.caption("Configure forecasting assumptions and recurring expenses.")
+    st.caption("Configure forecasting assumptions.")
     st.info(
         "Session settings are isolated to this browser session unless exported."
     )
@@ -253,56 +253,15 @@ with st.expander("Settings"):
             value=st.session_state.config["apr"] * 100,
         ) / 100
 
-    st.write("### Recurring Charges")
-
-
-    rows = st.session_state.recurring_edit
-
-    # Header
-    col_h1, col_h2, col_h3 = st.columns([2, 1, 0.5])
-    col_h1.markdown("**Name**")
-    col_h2.markdown("**Amount**")
-    col_h3.markdown("**Action**")
-
-    # Rows
-    for i, r in enumerate(rows):
-        col_r1, col_r2, col_r3 = st.columns([2, 1, 0.5])
-
-        name = col_r1.text_input(f"name_{i}", value=r.get("name", ""), label_visibility="collapsed")
-        amount = col_r2.number_input(f"amount_{i}", value=float(r.get("amount", 0.0)), label_visibility="collapsed")
-
-        if col_r3.button("❌", key=f"del_{i}"):
-            rows.pop(i)
-            st.session_state.recurring_edit = rows
-            st.rerun()
-
-        r["name"] = name
-        r["amount"] = amount
-
-    # Add new row
-    col_a1, col_a2 = st.columns([1, 3])
-    if col_a1.button("+ Add Recurring"):
-        rows.append({"name": "", "amount": 0.0})
-        st.session_state.recurring_edit = rows
-        st.rerun()
-
     # Save settings
     if st.button("Save Settings"):
 
         updated_config = deepcopy(st.session_state.config)
 
         updated_config["apr"] = new_apr
-        updated_config["recurring"] = deepcopy(
-            st.session_state.recurring_edit
-        )
 
         # Replace session config atomically
         st.session_state.config = updated_config
-
-        # Refresh editable session copy
-        st.session_state.recurring_edit = deepcopy(
-            updated_config["recurring"]
-        )
 
         st.success("Session settings updated")
         st.rerun()
@@ -563,6 +522,61 @@ else:
     )
 
 run_simulation_clicked = st.button("Run Simulation")
+
+with st.expander("Recurring Monthly Charges"):
+    st.caption(
+        "Add or update fixed monthly charges like subscriptions, insurance, and utility bills."
+    )
+    st.metric("Total Recurring Monthly Charges", f"${recurring_total:,.2f}")
+
+    rows = st.session_state.recurring_edit
+
+    col_h1, col_h2, col_h3 = st.columns([2, 1, 0.5])
+    col_h1.markdown("**Charge**")
+    col_h2.markdown("**Amount**")
+    col_h3.markdown("**Action**")
+
+    for i, r in enumerate(rows):
+        col_r1, col_r2, col_r3 = st.columns([2, 1, 0.5])
+
+        name = col_r1.text_input(
+            f"name_{i}",
+            value=r.get("name", ""),
+            label_visibility="collapsed",
+        )
+        amount = col_r2.number_input(
+            f"amount_{i}",
+            value=float(r.get("amount", 0.0)),
+            label_visibility="collapsed",
+        )
+
+        if col_r3.button("❌", key=f"del_{i}"):
+            rows.pop(i)
+            st.session_state.recurring_edit = rows
+            st.rerun()
+
+        r["name"] = name
+        r["amount"] = amount
+
+    col_a1, col_a2 = st.columns([1, 3])
+    if col_a1.button("+ Add Recurring"):
+        rows.append({"name": "", "amount": 0.0})
+        st.session_state.recurring_edit = rows
+        st.rerun()
+
+    if st.button("Save Recurring Charges"):
+        updated_config = deepcopy(st.session_state.config)
+        updated_config["recurring"] = deepcopy(
+            st.session_state.recurring_edit
+        )
+
+        st.session_state.config = updated_config
+        st.session_state.recurring_edit = deepcopy(
+            updated_config["recurring"]
+        )
+
+        st.success("Recurring charges updated")
+        st.rerun()
 
 # ==================================================
 # DEVELOPER AUTO-SIMULATION
