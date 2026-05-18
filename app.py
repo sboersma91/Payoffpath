@@ -237,10 +237,9 @@ with st.expander("Load Saved Plan"):
                 "An unexpected error occurred while importing the debt plan."
             )
 
-with st.expander("Settings"):
-    # Config Editor
-    st.subheader("Settings")
-    st.caption("Configure forecasting assumptions.")
+with st.expander("Forecast Assumptions"):
+    st.subheader("Forecast Assumptions")
+    st.caption("Update statement-based assumptions used across the forecast.")
     st.info(
         "Session settings are isolated to this browser session unless exported."
     )
@@ -249,9 +248,10 @@ with st.expander("Settings"):
 
     with col_s1:
         new_apr = st.number_input(
-            "APR (%)",
+            "Annual percentage rate (APR %)",
             value=st.session_state.config["apr"] * 100,
         ) / 100
+        st.caption("Use the purchase APR shown on your credit card statement.")
 
     # Save settings
     if st.button("Save Settings"):
@@ -473,19 +473,22 @@ st.header("Forecast Simulation")
 st.caption("Estimate payoff timing based on projected payments and spending.")
 
 payment = st.number_input(
-    "Projected Monthly Payment",
+    "Planned monthly payment",
     value=st.session_state.config["projected_monthly_payment"],
 )
+st.caption("Enter what you realistically plan to pay each month.")
 
 variable_spend = st.number_input(
-    "Variable Monthly Spend",
+    "Expected extra monthly spending",
     value=st.session_state.config["default_variable_spend"],
 )
+st.caption("Estimate monthly purchases beyond your fixed recurring charges.")
 
 compare_delta = st.number_input(
-    "Compare: Adjust Monthly Payment (+/-)",
+    "Payment change for comparison (+/-)",
     value=st.session_state.config.get("compare_delta", 0.0),
 )
+st.caption("Try a higher or lower payment amount to compare payoff timelines.")
 
 minimum_viable_payment = round(
     recurring_total +
