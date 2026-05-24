@@ -7,7 +7,6 @@ import streamlit as st
 
 from account import (
     get_engine_snapshot,
-    add,
     DEFAULT_CONFIG,
 )
 
@@ -20,6 +19,15 @@ from simulator import (
 from graphing import (
     create_balance_over_time_chart,
     create_payoff_comparison_chart,
+)
+from ui.help_sections import (
+    render_app_header,
+    render_onboarding,
+    render_forecast_guidance,
+)
+from ui.transactions import (
+    render_starting_balance_gate,
+    render_transaction_form,
 )
 
 
@@ -45,11 +53,7 @@ DEVELOPER_SEED_MODE = False
 # ==================================================
 
 
-st.title("Credit Card Payoff Simulator")
-st.caption("Session-based payoff forecasting and balance tracking.")
-
-if DEVELOPER_SEED_MODE:
-    st.warning("Developer Seed Mode Active")
+render_app_header(DEVELOPER_SEED_MODE)
 
 # ==================================================
 # SESSION STATE INITIALIZATION
@@ -153,31 +157,7 @@ export_snapshot = {
 
 export_json = json.dumps(export_snapshot, indent=2)
 
-if st.session_state.show_onboarding:
-    st.info(
-        "This app helps estimate how long one credit card may take to pay off while accounting for payments, ongoing spending, recurring charges, and interest."
-    )
-    st.markdown("### Quick Steps")
-    st.markdown(
-        """
-- Set your starting balance (first time only).
-- Add recent spending and payment activity.
-- Enter your projected monthly payment and variable spend.
-- Run the simulation and compare payoff timelines.
-- Save your plan so you can reload it later.
-        """
-    )
-    st.markdown("### Example Statement Mapping")
-    st.caption(
-        "Map statement numbers directly: current balance → Starting Balance, planned monthly payment → Projected Monthly Payment, expected new purchases → Variable Monthly Spend, and APR (%) from your statement terms."
-    )
-    st.markdown("### Forecast Disclaimer")
-    st.caption(
-        "This forecast is an estimate, not financial advice. Results depend on the accuracy of the values you enter and can change with future spending and payments."
-    )
-    if st.button("Got it — hide this guide"):
-        st.session_state.show_onboarding = False
-        st.rerun()
+render_onboarding()
 
 with st.expander("Load Saved Plan"):
     uploaded_snapshot = st.file_uploader(
@@ -291,23 +271,7 @@ with st.expander("Forecast Assumptions"):
 
 
 
-# If no data, allow user to set starting balance
-if not data:
-    st.subheader("Set Starting Balance")
-
-    start_balance = st.number_input("Starting Balance", min_value=0.0, step=100.0)
-
-    if st.button("Initialize"):
-        if start_balance <= 0:
-            st.warning("Enter a valid starting balance")
-        else:
-            # Store as initial balance (treated as spend to create positive balance)
-            add("spend", start_balance)
-
-            st.success("Starting balance set")
-            st.rerun()
-
-    st.stop()
+render_starting_balance_gate(data)
 
 snapshot = get_engine_snapshot()
 
@@ -393,80 +357,13 @@ col4, col5 = st.columns(2)
 col4.metric("Net", f"${round(total_pay - total_spend,2):,}")
 col5.metric("Fixed Monthly", f"${round(recurring_total,2):,}")
 
-# Add Transactions
-st.header("Add Transaction")
-st.caption("Record spending or payments applied to the account.")
-
-with st.form("add_transaction_form"):
-    col_a, col_b, col_c = st.columns([1,1,1])
-
-    with col_a:
-        txn_type = st.selectbox("Type", ["spend", "payment"]) 
-
-    with col_b:
-        amount = st.number_input("Amount", min_value=0.0, step=1.0, value=0.0)
-
-    with col_c:
-        submit = st.form_submit_button("Add")
-
-    if submit:
-        if amount <= 0:
-            st.warning("Enter an amount greater than 0")
-        else:
-            add(txn_type, float(amount))
-
-            st.success(f"Added {txn_type} of ${amount}")
-            st.rerun()
+render_transaction_form()
 
 # ==================================================
 # FORECAST GUIDANCE
 # ==================================================
 
-with st.expander("How To Use This Forecast"):
-
-    st.caption(
-        "Use real statement estimates to forecast how long payoff may take."
-    )
-
-    st.markdown("### Quick Steps")
-
-    st.markdown(
-        """
-- Enter your current balance
-- Enter a realistic monthly payment
-- Estimate monthly spending
-- Run the simulation
-- Adjust values to compare payoff timelines
-        """
-    )
-
-    st.divider()
-
-    st.markdown("### Example Statement Mapping")
-
-    st.info(
-        "Previous Balance: $12,500\n\n"
-        "Payments: -$1,200\n\n"
-        "Purchases: +$650\n\n"
-        "Interest: +$210\n\n"
-        "Current Balance: $12,160"
-    )
-
-    st.caption(
-        "Recurring charges are fixed monthly bills. Variable spending is flexible day-to-day spending. Close estimates are completely okay."
-    )
-
-    st.divider()
-
-    st.markdown("### Forecast Disclaimer")
-
-    st.markdown(
-        """
-- This is a payoff forecast tool
-- Future spending and payments affect accuracy
-- Results improve when updated regularly
-        """
-    )
+render_forecast_guidance()
 
 # Inputs
 st.header("Forecast Simulation")
