@@ -8,12 +8,6 @@ from account import (
     DEFAULT_CONFIG,
 )
 
-from simulator import (
-    run_simulation,
-    compare_simulation,
-    build_comparison_breakdown,
-)
-
 from graphing import (
     create_balance_over_time_chart,
     create_payoff_comparison_chart,
@@ -46,6 +40,13 @@ from persistence.session_io import (
     load_import_payload,
     restore_imported_session,
     build_export_filename,
+)
+from orchestration.simulation_flow import (
+    prepare_simulation_inputs,
+    run_forecast_pipeline,
+    build_cycle_summary,
+    derive_payoff_summary,
+    derive_comparison_summary,
 )
 
 
@@ -373,69 +374,53 @@ if (
     st.session_state.developer_simulation_ran = True
 
 if run_simulation_clicked:
-
-    baseline_result = run_simulation(
+    simulation_inputs = prepare_simulation_inputs(
         balance=balance,
         payment=payment,
         recurring_total=recurring_total,
         variable_spend=variable_spend,
         apr=st.session_state.config["apr"],
         max_months=st.session_state.config["max_simulation_months"],
+        compare_delta=compare_delta,
     )
 
-    if not baseline_result["success"]:
+    current_cycle_summary = build_cycle_summary(
+        initial_balance=initial_balance,
+        total_spend=total_spend,
+        total_pay=total_pay,
+        total_interest_paid=total_interest_paid,
+        balance=balance,
+    )
+
+    forecast_result = run_forecast_pipeline(
+        baseline_inputs=simulation_inputs["baseline_inputs"],
+        comparison_inputs=simulation_inputs["comparison_inputs"],
+        current_cycle_summary=current_cycle_summary,
+    )
+
+    if not forecast_result["success"]:
         st.error("Payment too low to overcome spending + interest.")
         st.stop()
 
-    comparison_result = compare_simulation(
-        balance=balance,
-        payment=payment,
-        compare_delta=compare_delta,
-        recurring_total=recurring_total,
-        variable_spend=variable_spend,
-        apr=st.session_state.config["apr"],
-        max_months=st.session_state.config["max_simulation_months"],
-    )
-
-    current_cycle_summary = {
-        "starting_balance": initial_balance,
-        "spending": total_spend,
-        "payment": total_pay,
-        "interest": total_interest_paid,
-        "net_reduction": round(total_pay - total_spend, 2),
-        "ending_balance": round(balance, 2),
-        "adjusted_ending_balance": round(balance, 2),
-        "difference": 0,
-    }
-
-    comparison_breakdown = build_comparison_breakdown(
-        baseline_result,
-        comparison_result,
-        current_cycle_summary=current_cycle_summary,
-    )
+    baseline_result = forecast_result["baseline_result"]
+    comparison_result = forecast_result["comparison_result"]
+    comparison_breakdown = forecast_result["comparison_breakdown"]
 
     st.header("Simulation Results")
 
     months = baseline_result["months"]
     total_interest = baseline_result["total_interest"]
 
-    average_monthly_interest = round(
-        total_interest / months,
-        2,
-    ) if months else 0
+    payoff_summary = derive_payoff_summary(
+        months=months,
+        total_interest=total_interest,
+        ending_balance=baseline_result["ending_balance"],
+    )
 
-    estimated_payoff_date = datetime.today().replace(day=1)
+    average_monthly_interest = payoff_summary["average_monthly_interest"]
+    estimated_payoff_date = payoff_summary["estimated_payoff_date"]
 
-    if months:
-        estimated_payoff_year = estimated_payoff_date.year + ((estimated_payoff_date.month - 1 + months) // 12)
-        estimated_payoff_month = ((estimated_payoff_date.month - 1 + months) % 12) + 1
-
-        estimated_payoff_date = estimated_payoff_date.replace(
-            year=estimated_payoff_year,
-            month=estimated_payoff_month,
-        )
-
-    if baseline_result["ending_balance"] > 0:
+    if payoff_summary["payoff_exceeds_window"]:
         st.error("Payoff exceeds configured simulation window.")
     else:
         st.success(f"Estimated payoff timeline: {months} months")
@@ -444,12 +429,13 @@ if run_simulation_clicked:
             f"Estimated payoff date: {estimated_payoff_date.strftime('%B %Y')}"
         )
 
-    if comparison_result["success"]:
-        compare_months = comparison_result["months"]
+    comparison_summary = derive_comparison_summary(months, comparison_result)
+    if comparison_summary["success"]:
+        compare_months = comparison_summary["compare_months"]
 
         st.info(f"Adjusted plan payoff: {compare_months} months")
 
-        diff = compare_months - months
+        diff = comparison_summary["diff"]
 
         if diff > 0:
             st.error(f"+{diff} months longer")
