@@ -408,9 +408,8 @@ if run_simulation_clicked:
     comparison_result = forecast_result["comparison_result"]
     comparison_breakdown = forecast_result["comparison_breakdown"]
 
-    st.header("Forecast Interpretation")
-
-    st.header("Simulation Results")
+    st.divider()
+    st.header("Forecast Results")
 
     months = baseline_result["months"]
     total_interest = baseline_result["total_interest"]
@@ -424,31 +423,10 @@ if run_simulation_clicked:
     average_monthly_interest = payoff_summary["average_monthly_interest"]
     estimated_payoff_date = payoff_summary["estimated_payoff_date"]
 
-    if payoff_summary["payoff_exceeds_window"]:
-        st.error("Payoff exceeds configured simulation window.")
-    else:
-        st.success(f"Estimated payoff timeline: {months} months")
-
-        st.info(
-            f"Estimated payoff date: {estimated_payoff_date.strftime('%B %Y')}"
-        )
-
     comparison_summary = derive_comparison_summary(months, comparison_result)
-    if comparison_summary["success"]:
-        compare_months = comparison_summary["compare_months"]
+    diff = comparison_summary.get("diff", 0)
 
-        st.info(f"Adjusted plan payoff: {compare_months} months")
-
-        diff = comparison_summary["diff"]
-
-        if diff > 0:
-            st.error(f"+{diff} months longer")
-        elif diff < 0:
-            st.success(f"{-diff} months faster")
-        else:
-            st.write("No change in payoff time")
-    else:
-        st.warning("Adjusted plan will not pay off the balance.")
+    st.subheader("Forecast Interpretation")
 
     if payoff_summary["payoff_exceeds_window"]:
         st.warning(
@@ -501,7 +479,21 @@ if run_simulation_clicked:
     for point in interpretation_points[:3]:
         st.markdown(f"- {point}")
 
-    st.subheader("Forecast Summary")
+    st.divider()
+    st.subheader("Balance Over Time")
+
+    baseline_balances = baseline_result["balances"]
+    comparison_balances = comparison_result["balances"]
+
+    balance_chart = create_balance_over_time_chart(
+        baseline_balances=baseline_balances,
+        comparison_balances=comparison_balances,
+    )
+
+    st.pyplot(balance_chart)
+
+    st.divider()
+    st.subheader("Key Forecast Metrics")
 
     summary_col1, summary_col2, summary_col3 = st.columns(3)
 
@@ -525,6 +517,37 @@ if run_simulation_clicked:
         f"${average_monthly_interest:,.2f}"
     )
 
+    st.subheader("Comparison Insight")
+    if payoff_summary["payoff_exceeds_window"]:
+        st.error("Payoff exceeds configured simulation window.")
+    else:
+        st.success(f"Estimated payoff timeline: {months} months")
+        st.caption(
+            f"Estimated payoff date: {estimated_payoff_date.strftime('%B %Y')}"
+        )
+
+    if comparison_summary["success"]:
+        compare_months = comparison_summary["compare_months"]
+        st.caption(f"Adjusted scenario payoff: {compare_months} months")
+
+        if diff > 0:
+            st.warning(f"Adjusted scenario is {diff} months longer.")
+        elif diff < 0:
+            st.success(f"Adjusted scenario is {-diff} months faster.")
+        else:
+            st.info("Adjusted scenario has about the same payoff timeline.")
+    else:
+        st.warning("Adjusted plan will not pay off the balance.")
+
+    payoff_chart = create_payoff_comparison_chart(
+        baseline_months=months,
+        comparison_months=comparison_result["months"] or st.session_state.config["max_simulation_months"],
+    )
+
+    st.subheader("Payoff Duration Comparison")
+    st.pyplot(payoff_chart)
+
+    st.divider()
     st.subheader("Monthly Breakdown")
 
     st.caption(
@@ -547,26 +570,7 @@ if run_simulation_clicked:
         },
     )
 
-    st.subheader("Balance Over Time")
-
-    baseline_balances = baseline_result["balances"]
-    comparison_balances = comparison_result["balances"]
-
-    balance_chart = create_balance_over_time_chart(
-        baseline_balances=baseline_balances,
-        comparison_balances=comparison_balances,
-    )
-
-    payoff_chart = create_payoff_comparison_chart(
-        baseline_months=months,
-        comparison_months=comparison_result["months"] or st.session_state.config["max_simulation_months"],
-    )
-
-
-    st.pyplot(balance_chart)
-
-    st.subheader("Payoff Duration Comparison")
-    st.pyplot(payoff_chart)
+    st.divider()
     st.subheader("Save This Forecast")
     st.caption("Save this forecast to continue or compare scenarios later.")
     st.download_button(
