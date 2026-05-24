@@ -33,6 +33,7 @@ from state.session_init import (
     initialize_session_state,
     initialize_developer_seed,
     initialize_recurring_editor,
+    load_example_scenario,
 )
 from persistence.session_io import (
     build_export_snapshot,
@@ -74,6 +75,18 @@ DEVELOPER_SEED_MODE = False
 
 render_app_header(DEVELOPER_SEED_MODE)
 
+st.markdown("## Plan Your Credit Card Payoff Path")
+st.caption(
+    "Estimate how spending, payments, and interest may affect your monthly payoff timeline."
+)
+st.caption(
+    "Forecasts are estimates only and not financial advice."
+)
+
+st.info(
+    "**Start here:** Enter your current balance, add expected monthly payment and card spending, run the forecast, then review your estimated payoff path."
+)
+
 # ==================================================
 # SESSION STATE INITIALIZATION
 # ==================================================
@@ -104,13 +117,14 @@ export_snapshot = build_export_snapshot(
 
 export_json = serialize_export_payload(export_snapshot)
 
-render_onboarding()
+load_col, example_col = st.columns([2, 1])
 
-with st.expander("Load Saved Plan"):
+with load_col:
+    st.markdown("### Continue a saved forecast")
     uploaded_snapshot = st.file_uploader(
-        "⬆️ Upload Saved Plan",
+        "Upload a saved forecast",
         type=["json"],
-        help="Upload a previously exported debt-plan JSON file.",
+        help="Upload a saved forecast file to continue where you left off.",
     )
 
     if uploaded_snapshot is not None:
@@ -119,69 +133,22 @@ with st.expander("Load Saved Plan"):
         if not import_result["success"]:
             st.error(import_result["error"])
         else:
-            if st.button("Restore Imported Session"):
+            if st.button("Restore Previous Forecast"):
                 restore_imported_session(
                     import_result["imported_data"],
                     st.session_state,
                 )
-
-                st.success("Debt plan imported successfully.")
-
+                st.success("Saved forecast restored successfully.")
                 st.rerun()
 
-with st.expander("Forecast Assumptions"):
-    st.subheader("Forecast Assumptions")
-    st.caption("Update statement-based assumptions used across the forecast.")
-    st.info(
-        "Session settings are isolated to this browser session unless exported."
-    )
-
-    col_s1 = st.columns(1)[0]
-
-    with col_s1:
-        new_apr = st.number_input(
-            "Annual percentage rate (APR %)",
-            value=st.session_state.config["apr"] * 100,
-        ) / 100
-        st.caption("Use the purchase APR shown on your credit card statement.")
-
-    # Save settings
-    if st.button("Save Settings"):
-
-        updated_config = deepcopy(st.session_state.config)
-
-        updated_config["apr"] = new_apr
-
-        # Replace session config atomically
-        st.session_state.config = updated_config
-
-        st.success("Session settings updated")
+with example_col:
+    st.markdown("### New here?")
+    if st.button("Load Example Scenario", use_container_width=True):
+        load_example_scenario(DEFAULT_CONFIG)
+        st.success("Example scenario loaded.")
         st.rerun()
 
-    st.divider()
-    st.write("### Reset Tracker")
-    st.warning("This clears all balance, spending, and payment history. Settings will stay saved.")
-
-    confirm_reset = st.checkbox("I understand this will delete my tracking history")
-
-    if st.button("Reset Tracker"):
-        if not confirm_reset:
-            st.warning("Check the confirmation box before resetting.")
-        else:
-            # Clear isolated session transaction state
-            st.session_state.transactions = []
-
-            # Reset transient editor state
-            st.session_state.recurring_edit = deepcopy(
-                st.session_state.config.get("recurring", [])
-            )
-
-            st.success("Tracker reset successfully.")
-
-            # Clean rerun with preserved config defaults
-            st.rerun()
-
-
+render_onboarding()
 
 render_starting_balance_gate(data)
 
@@ -231,16 +198,15 @@ col4.metric("Net", f"${round(total_pay - total_spend,2):,}")
 col5.metric("Fixed Monthly", f"${round(recurring_total,2):,}")
 
 render_transaction_form()
+st.divider()
+st.header("Forecast Setup")
+st.caption("Enter your current card situation to prepare a payoff forecast.")
 
-# ==================================================
-# FORECAST GUIDANCE
-# ==================================================
-
-render_forecast_guidance()
-
-# Inputs
-st.header("Forecast Simulation")
-st.caption("Estimate payoff timing based on projected payments and spending.")
+apr = st.number_input(
+    "Annual percentage rate (APR %)",
+    value=st.session_state.config["apr"] * 100,
+) / 100
+st.caption("Use the purchase APR shown on your latest statement.")
 
 payment = st.number_input(
     "Planned monthly payment",
@@ -254,16 +220,10 @@ variable_spend = st.number_input(
 )
 st.caption("Estimate monthly purchases beyond your fixed recurring charges.")
 
-compare_delta = st.number_input(
-    "Payment change for comparison (+/-)",
-    value=st.session_state.config.get("compare_delta", 0.0),
-)
-st.caption("Try a higher or lower payment amount to compare payoff timelines.")
-
 readiness_metrics = calculate_forecast_readiness(
     balance=balance,
     recurring_total=recurring_total,
-    apr=st.session_state.config["apr"],
+    apr=apr,
     safety_payment_buffer=st.session_state.config["safety_payment_buffer"],
 )
 minimum_viable_payment = readiness_metrics["minimum_viable_payment"]
@@ -294,9 +254,15 @@ else:
         "Projected payment appears strong enough to reduce the balance."
     )
 
-run_simulation_clicked = st.button("Run Simulation")
+with st.expander("Advanced Forecast Settings", expanded=False):
+    st.caption("Optional controls for deeper planning and comparison.")
 
-with st.expander("Recurring Monthly Charges"):
+    compare_delta = st.number_input(
+        "Payment change for comparison (+/-)",
+        value=st.session_state.config.get("compare_delta", 0.0),
+    )
+    st.caption("Try a higher or lower payment amount to compare payoff timelines.")
+
     st.caption(
         "Add or update fixed monthly charges like subscriptions, insurance, and utility bills."
     )
@@ -350,6 +316,42 @@ with st.expander("Recurring Monthly Charges"):
 
         st.success("Recurring charges updated")
         st.rerun()
+
+    st.divider()
+    st.write("### Reset Tracker")
+    st.warning("This clears all balance, spending, and payment history. Settings will stay saved.")
+
+    confirm_reset = st.checkbox("I understand this will delete my tracking history")
+
+    if st.button("Reset Tracker"):
+        if not confirm_reset:
+            st.warning("Check the confirmation box before resetting.")
+        else:
+            st.session_state.transactions = []
+            st.session_state.recurring_edit = deepcopy(
+                st.session_state.config.get("recurring", [])
+            )
+            st.success("Tracker reset successfully.")
+            st.rerun()
+
+# ==================================================
+# FORECAST GUIDANCE
+# ==================================================
+
+render_forecast_guidance()
+
+run_simulation_clicked = st.button(
+    "Run Forecast",
+    type="primary",
+    use_container_width=True,
+)
+
+updated_config = deepcopy(st.session_state.config)
+updated_config["apr"] = apr
+updated_config["projected_monthly_payment"] = payment
+updated_config["default_variable_spend"] = variable_spend
+updated_config["compare_delta"] = compare_delta
+st.session_state.config = updated_config
 
 # ==================================================
 # DEVELOPER AUTO-SIMULATION
@@ -406,6 +408,8 @@ if run_simulation_clicked:
     comparison_result = forecast_result["comparison_result"]
     comparison_breakdown = forecast_result["comparison_breakdown"]
 
+    st.header("Forecast Interpretation")
+
     st.header("Simulation Results")
 
     months = baseline_result["months"]
@@ -445,6 +449,57 @@ if run_simulation_clicked:
             st.write("No change in payoff time")
     else:
         st.warning("Adjusted plan will not pay off the balance.")
+
+    if payoff_summary["payoff_exceeds_window"]:
+        st.warning(
+            "At the current settings, the balance is not projected to fully pay off within the selected forecast window."
+        )
+    else:
+        st.info(
+            f"At your current payment and spending levels, this balance is projected to be paid off in about {months} months (around {estimated_payoff_date.strftime('%B %Y')})."
+        )
+
+    interpretation_points = []
+
+    if payment <= monthly_interest_estimate:
+        interpretation_points.append(
+            "Your planned payment is close to the monthly interest level, so payoff progress may feel very slow month to month."
+        )
+    elif payment < (monthly_interest_estimate * 2):
+        interpretation_points.append(
+            "Your planned payment is above interest, so the balance is moving in the right direction, but gradually."
+        )
+    else:
+        interpretation_points.append(
+            "Your planned payment is meaningfully above estimated monthly interest, which supports steadier payoff progress."
+        )
+
+    if total_interest > balance:
+        interpretation_points.append(
+            "Projected total interest is high relative to the current balance, so small payment or spending changes can have a noticeable long-term impact."
+        )
+    else:
+        interpretation_points.append(
+            "Projected interest stays below the current balance, which suggests the plan is reasonably efficient if spending assumptions hold."
+        )
+
+    if comparison_summary["success"]:
+        if diff < 0:
+            interpretation_points.append(
+                f"The comparison scenario improves payoff timing by {-diff} months."
+            )
+        elif diff > 0:
+            interpretation_points.append(
+                f"The comparison scenario extends payoff timing by {diff} months."
+            )
+        else:
+            interpretation_points.append(
+                "The comparison scenario produces about the same payoff timeline."
+            )
+
+    st.markdown("#### What this means")
+    for point in interpretation_points[:3]:
+        st.markdown(f"- {point}")
 
     st.subheader("Forecast Summary")
 
@@ -512,16 +567,12 @@ if run_simulation_clicked:
 
     st.subheader("Payoff Duration Comparison")
     st.pyplot(payoff_chart)
-
-with st.expander("Save Your Plan"):
-    st.caption(
-        "Sessions are private to your browser and temporary unless exported. "
-        "Download your current plan to save progress."
-    )
+    st.subheader("Save This Forecast")
+    st.caption("Save this forecast to continue or compare scenarios later.")
     st.download_button(
-        label="⬇️ Download Current Plan",
+        label="⬇️ Save Forecast File",
         data=export_json,
         file_name=build_export_filename(),
         mime="application/json",
-        help="Download a complete debt-plan snapshot including transactions and forecasting configuration.",
+        help="Save a copy of your forecast so you can restore it later.",
     )
