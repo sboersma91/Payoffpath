@@ -120,11 +120,11 @@ export_json = serialize_export_payload(export_snapshot)
 load_col, example_col = st.columns([2, 1])
 
 with load_col:
-    st.markdown("### Returning user?")
+    st.markdown("### Continue a saved forecast")
     uploaded_snapshot = st.file_uploader(
         "Upload a saved forecast",
         type=["json"],
-        help="Upload a previously exported debt-plan JSON file.",
+        help="Upload a saved forecast file to continue where you left off.",
     )
 
     if uploaded_snapshot is not None:
@@ -133,12 +133,12 @@ with load_col:
         if not import_result["success"]:
             st.error(import_result["error"])
         else:
-            if st.button("Restore Imported Session"):
+            if st.button("Restore Previous Forecast"):
                 restore_imported_session(
                     import_result["imported_data"],
                     st.session_state,
                 )
-                st.success("Debt plan imported successfully.")
+                st.success("Saved forecast restored successfully.")
                 st.rerun()
 
 with example_col:
@@ -408,6 +408,8 @@ if run_simulation_clicked:
     comparison_result = forecast_result["comparison_result"]
     comparison_breakdown = forecast_result["comparison_breakdown"]
 
+    st.header("Forecast Interpretation")
+
     st.header("Simulation Results")
 
     months = baseline_result["months"]
@@ -447,6 +449,57 @@ if run_simulation_clicked:
             st.write("No change in payoff time")
     else:
         st.warning("Adjusted plan will not pay off the balance.")
+
+    if payoff_summary["payoff_exceeds_window"]:
+        st.warning(
+            "At the current settings, the balance is not projected to fully pay off within the selected forecast window."
+        )
+    else:
+        st.info(
+            f"At your current payment and spending levels, this balance is projected to be paid off in about {months} months (around {estimated_payoff_date.strftime('%B %Y')})."
+        )
+
+    interpretation_points = []
+
+    if payment <= monthly_interest_estimate:
+        interpretation_points.append(
+            "Your planned payment is close to the monthly interest level, so payoff progress may feel very slow month to month."
+        )
+    elif payment < (monthly_interest_estimate * 2):
+        interpretation_points.append(
+            "Your planned payment is above interest, so the balance is moving in the right direction, but gradually."
+        )
+    else:
+        interpretation_points.append(
+            "Your planned payment is meaningfully above estimated monthly interest, which supports steadier payoff progress."
+        )
+
+    if total_interest > balance:
+        interpretation_points.append(
+            "Projected total interest is high relative to the current balance, so small payment or spending changes can have a noticeable long-term impact."
+        )
+    else:
+        interpretation_points.append(
+            "Projected interest stays below the current balance, which suggests the plan is reasonably efficient if spending assumptions hold."
+        )
+
+    if comparison_summary["success"]:
+        if diff < 0:
+            interpretation_points.append(
+                f"The comparison scenario improves payoff timing by {-diff} months."
+            )
+        elif diff > 0:
+            interpretation_points.append(
+                f"The comparison scenario extends payoff timing by {diff} months."
+            )
+        else:
+            interpretation_points.append(
+                "The comparison scenario produces about the same payoff timeline."
+            )
+
+    st.markdown("#### What this means")
+    for point in interpretation_points[:3]:
+        st.markdown(f"- {point}")
 
     st.subheader("Forecast Summary")
 
@@ -514,16 +567,12 @@ if run_simulation_clicked:
 
     st.subheader("Payoff Duration Comparison")
     st.pyplot(payoff_chart)
-
-with st.expander("Save Your Plan"):
-    st.caption(
-        "Sessions are private to your browser and temporary unless exported. "
-        "Download your current plan to save progress."
-    )
+    st.subheader("Save This Forecast")
+    st.caption("Save this forecast to continue or compare scenarios later.")
     st.download_button(
-        label="⬇️ Download Current Plan",
+        label="⬇️ Save Forecast File",
         data=export_json,
         file_name=build_export_filename(),
         mime="application/json",
-        help="Download a complete debt-plan snapshot including transactions and forecasting configuration.",
+        help="Save a copy of your forecast so you can restore it later.",
     )
