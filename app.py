@@ -1,7 +1,5 @@
 from datetime import datetime
 from copy import deepcopy
-import json
-from json import JSONDecodeError
 
 import streamlit as st
 
@@ -20,6 +18,14 @@ from graphing import (
     create_balance_over_time_chart,
     create_payoff_comparison_chart,
 )
+from logic.metrics import (
+    build_snapshot_from_latest_transaction,
+    calculate_initial_balance,
+    calculate_recurring_total,
+    calculate_cycle_metrics,
+    get_current_month,
+    calculate_forecast_readiness,
+)
 from ui.help_sections import (
     render_app_header,
     render_onboarding,
@@ -33,6 +39,13 @@ from state.session_init import (
     initialize_session_state,
     initialize_developer_seed,
     initialize_recurring_editor,
+)
+from persistence.session_io import (
+    build_export_snapshot,
+    serialize_export_payload,
+    load_import_payload,
+    restore_imported_session,
+    build_export_filename,
 )
 
 
@@ -83,14 +96,12 @@ data = st.session_state.transactions
 # SESSION EXPORT
 # ==================================================
 
-export_snapshot = {
-    "version": "1.0",
-    "exported_at": datetime.today().strftime("%Y-%m-%d %H:%M:%S"),
-    "transactions": deepcopy(st.session_state.transactions),
-    "config": deepcopy(st.session_state.config),
-}
+export_snapshot = build_export_snapshot(
+    st.session_state.transactions,
+    st.session_state.config,
+)
 
-export_json = json.dumps(export_snapshot, indent=2)
+export_json = serialize_export_payload(export_snapshot)
 
 render_onboarding()
 
@@ -102,55 +113,20 @@ with st.expander("Load Saved Plan"):
     )
 
     if uploaded_snapshot is not None:
+        import_result = load_import_payload(uploaded_snapshot)
 
-        try:
-            imported_data = json.load(uploaded_snapshot)
+        if not import_result["success"]:
+            st.error(import_result["error"])
+        else:
+            if st.button("Restore Imported Session"):
+                restore_imported_session(
+                    import_result["imported_data"],
+                    st.session_state,
+                )
 
-            from validation import validate_import_data
+                st.success("Debt plan imported successfully.")
 
-            valid, error = validate_import_data(imported_data)
-
-            if not valid:
-                st.error(error)
-
-            else:
-                if st.button("Restore Imported Session"):
-
-                    imported_config = deepcopy(imported_data.get("config", {}))
-
-                    imported_transactions = deepcopy(
-                        imported_data.get("transactions", [])
-                    )
-
-                    # Restore isolated session config
-                    st.session_state.config = imported_config
-
-                    # Restore isolated transaction history
-                    st.session_state.transactions = imported_transactions
-
-                    # Restore recurring editor state
-                    st.session_state.recurring_edit = deepcopy(
-                        imported_config.get("recurring", [])
-                    )
-
-                    st.success("Debt plan imported successfully.")
-
-                    st.rerun()
-
-        except JSONDecodeError:
-            st.error(
-                "The uploaded file is not valid JSON. Please upload a valid exported debt-plan file."
-            )
-
-        except UnicodeDecodeError:
-            st.error(
-                "The uploaded file could not be decoded. Please upload a UTF-8 encoded JSON file."
-            )
-
-        except Exception:
-            st.error(
-                "An unexpected error occurred while importing the debt plan."
-            )
+                st.rerun()
 
 with st.expander("Forecast Assumptions"):
     st.subheader("Forecast Assumptions")
@@ -211,76 +187,37 @@ render_starting_balance_gate(data)
 snapshot = get_engine_snapshot()
 
 if data:
-    latest_transaction = data[-1]
-
-    snapshot = {
-        "statement_balance": float(latest_transaction.get("statement_balance", 0)),
-        "current_balance": float(latest_transaction.get("current_balance", 0)),
-        "total_balance": float(latest_transaction.get("total_balance", 0)),
-        "config": deepcopy(st.session_state.config),
-    }
+    snapshot = build_snapshot_from_latest_transaction(
+        data,
+        deepcopy(st.session_state.config),
+    )
 
 balance = snapshot["total_balance"]
 
 # Initialize initial_balance for current cycle summary
-initial_balance = 0
+initial_balance = calculate_initial_balance(data)
 
-if data:
-    initial_balance = round(
-        float(data[0].get("total_balance", 0)),
-        2,
-    )
-
-recurring_total = round(
-    sum(r.get("amount", 0) for r in st.session_state.config.get("recurring", [])),
-    2,
+recurring_total = calculate_recurring_total(
+    st.session_state.config.get("recurring", []),
 )
 
 st.header("Current Account Status")
 
 # Automatically use current month
-current_month = datetime.today().strftime("%Y-%m")
+current_month = get_current_month()
 
 st.write(f"Showing data for: {current_month}")
 st.caption("Current-cycle transaction summary.")
 
-cycle_data = [r for r in data if r["date"].startswith(current_month)]
+cycle_metrics = calculate_cycle_metrics(data, current_month)
+cycle_data = cycle_metrics["cycle_data"]
 
 if not cycle_data:
     st.info("No transactions yet this month.")
 
-# Exclude initialization transaction from spend totals
-initial_record = data[0] if data else None
-
-spend_transactions = [
-    r for r in cycle_data
-    if r["type"] == "spend" and r != initial_record
-]
-
-payment_transactions = [
-    r for r in cycle_data
-    if r["type"] == "payment"
-]
-
-interest_transactions = [
-    r for r in cycle_data
-    if r["type"] == "interest"
-]
-
-total_spend = round(
-    sum(float(r["amount"]) for r in spend_transactions),
-    2,
-)
-
-total_pay = round(
-    sum(float(r["amount"]) for r in payment_transactions),
-    2,
-)
-
-total_interest_paid = round(
-    sum(float(r["amount"]) for r in interest_transactions),
-    2,
-)
+total_spend = cycle_metrics["total_spend"]
+total_pay = cycle_metrics["total_pay"]
+total_interest_paid = cycle_metrics["total_interest_paid"]
 
 # Split into two rows to prevent truncation
 col1, col2, col3 = st.columns(3)
@@ -322,14 +259,14 @@ compare_delta = st.number_input(
 )
 st.caption("Try a higher or lower payment amount to compare payoff timelines.")
 
-minimum_viable_payment = round(
-    recurring_total +
-    (balance * (st.session_state.config["apr"] / 12)) +
-    st.session_state.config["safety_payment_buffer"],
-    2,
+readiness_metrics = calculate_forecast_readiness(
+    balance=balance,
+    recurring_total=recurring_total,
+    apr=st.session_state.config["apr"],
+    safety_payment_buffer=st.session_state.config["safety_payment_buffer"],
 )
-
-monthly_interest_estimate = round(balance * (st.session_state.config["apr"] / 12), 2)
+minimum_viable_payment = readiness_metrics["minimum_viable_payment"]
+monthly_interest_estimate = readiness_metrics["monthly_interest_estimate"]
 
 st.subheader("Forecast Readiness")
 
@@ -598,7 +535,7 @@ with st.expander("Save Your Plan"):
     st.download_button(
         label="⬇️ Download Current Plan",
         data=export_json,
-        file_name=f"credit_tracker_session_{datetime.today().strftime('%Y%m%d_%H%M%S')}.json",
+        file_name=build_export_filename(),
         mime="application/json",
         help="Download a complete debt-plan snapshot including transactions and forecasting configuration.",
     )
