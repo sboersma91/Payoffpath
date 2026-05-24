@@ -54,6 +54,8 @@ from orchestration.simulation_flow import (
 st.set_page_config(page_title="Credit Card Payoff Simulator", layout="wide")
 
 DEVELOPER_SEED_MODE = False
+# Replace this URL with the live feedback survey link before deployment
+SURVEY_LINK = "https://REPLACE_WITH_SURVEY_LINK"
 
 # ==================================================
 # DEVELOPER SEED MODE
@@ -574,5 +576,15 @@ if run_simulation_clicked:
         file_name=build_export_filename(),
         mime="application/json",
         help="Save a copy of your forecast so you can restore it later.",
+        use_container_width=True,
+    )
+
+    st.divider()
+    st.caption(
+        "Found something confusing or useful? I’d love feedback from real users."
+    )
+    st.link_button(
+        "Share Feedback",
+        SURVEY_LINK,
         use_container_width=True,
     )
