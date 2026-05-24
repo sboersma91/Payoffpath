@@ -1,13 +1,10 @@
 from datetime import datetime
 from copy import deepcopy
-import json
-from json import JSONDecodeError
 
 import streamlit as st
 
 from account import (
     get_engine_snapshot,
-    add,
     DEFAULT_CONFIG,
 )
 
@@ -20,6 +17,35 @@ from simulator import (
 from graphing import (
     create_balance_over_time_chart,
     create_payoff_comparison_chart,
+)
+from logic.metrics import (
+    build_snapshot_from_latest_transaction,
+    calculate_initial_balance,
+    calculate_recurring_total,
+    calculate_cycle_metrics,
+    get_current_month,
+    calculate_forecast_readiness,
+)
+from ui.help_sections import (
+    render_app_header,
+    render_onboarding,
+    render_forecast_guidance,
+)
+from ui.transactions import (
+    render_starting_balance_gate,
+    render_transaction_form,
+)
+from state.session_init import (
+    initialize_session_state,
+    initialize_developer_seed,
+    initialize_recurring_editor,
+)
+from persistence.session_io import (
+    build_export_snapshot,
+    serialize_export_payload,
+    load_import_payload,
+    restore_imported_session,
+    build_export_filename,
 )
 
 
@@ -45,98 +71,24 @@ DEVELOPER_SEED_MODE = False
 # ==================================================
 
 
-st.title("Credit Card Payoff Simulator")
-st.caption("Session-based payoff forecasting and balance tracking.")
-
-if DEVELOPER_SEED_MODE:
-    st.warning("Developer Seed Mode Active")
+render_app_header(DEVELOPER_SEED_MODE)
 
 # ==================================================
 # SESSION STATE INITIALIZATION
 # ==================================================
 
-if "config" not in st.session_state:
-    # Deep copy prevents nested shared mutation
-    st.session_state.config = deepcopy(DEFAULT_CONFIG)
-
-if "transactions" not in st.session_state:
-    st.session_state.transactions = []
-
-if "show_onboarding" not in st.session_state:
-    st.session_state.show_onboarding = True
+initialize_session_state(DEFAULT_CONFIG)
 
 # ==================================================
 # DEVELOPER SEED INITIALIZATION
 # ==================================================
 
-if (
-    DEVELOPER_SEED_MODE
-    and not st.session_state.transactions
-):
+initialize_developer_seed(
+    DEVELOPER_SEED_MODE,
+    DEFAULT_CONFIG,
+)
 
-    seeded_config = deepcopy(DEFAULT_CONFIG)
-
-    seeded_config["apr"] = 0.2499
-    seeded_config["projected_monthly_payment"] = 1400
-    seeded_config["default_variable_spend"] = 350
-    seeded_config["safety_payment_buffer"] = 150
-    seeded_config["max_simulation_months"] = 120
-    seeded_config["compare_delta"] = 250
-    seeded_config["recurring"] = [
-        {"name": "Phone", "amount": 95},
-        {"name": "Insurance", "amount": 180},
-        {"name": "Gym", "amount": 45},
-        {"name": "Streaming", "amount": 38},
-    ]
-
-    st.session_state.config = seeded_config
-
-    st.session_state.transactions = [
-        {
-            "date": "2026-05-01",
-            "type": "spend",
-            "amount": 9800,
-            "statement_balance": 0,
-            "current_balance": 9800,
-            "total_balance": 9800,
-        },
-        {
-            "date": "2026-05-03",
-            "type": "statement_close",
-            "amount": 0,
-            "statement_balance": 9800,
-            "current_balance": 0,
-            "total_balance": 9800,
-        },
-        {
-            "date": "2026-05-07",
-            "type": "spend",
-            "amount": 850,
-            "statement_balance": 9800,
-            "current_balance": 850,
-            "total_balance": 10650,
-        },
-        {
-            "date": "2026-05-10",
-            "type": "payment",
-            "amount": 400,
-            "statement_balance": 9400,
-            "current_balance": 850,
-            "total_balance": 10250,
-        },
-    ]
-
-    st.session_state.recurring_edit = deepcopy(
-        seeded_config["recurring"]
-    )
-
-    st.session_state.developer_seed_loaded = True
-    st.session_state.developer_simulation_ran = False
-
-if "recurring_edit" not in st.session_state:
-    st.session_state.recurring_edit = deepcopy(
-        st.session_state.config.get("recurring", [])
-    )
+initialize_recurring_editor()
 
 data = st.session_state.transactions
 
@@ -144,40 +96,14 @@ data = st.session_state.transactions
 # SESSION EXPORT
 # ==================================================
 
-export_snapshot = {
-    "version": "1.0",
-    "exported_at": datetime.today().strftime("%Y-%m-%d %H:%M:%S"),
-    "transactions": deepcopy(st.session_state.transactions),
-    "config": deepcopy(st.session_state.config),
-}
+export_snapshot = build_export_snapshot(
+    st.session_state.transactions,
+    st.session_state.config,
+)
 
-export_json = json.dumps(export_snapshot, indent=2)
+export_json = serialize_export_payload(export_snapshot)
 
-if st.session_state.show_onboarding:
-    st.info(
-        "This app helps estimate how long one credit card may take to pay off while accounting for payments, ongoing spending, recurring charges, and interest."
-    )
-    st.markdown("### Quick Steps")
-    st.markdown(
-        """
-- Set your starting balance (first time only).
-- Add recent spending and payment activity.
-- Enter your projected monthly payment and variable spend.
-- Run the simulation and compare payoff timelines.
-- Save your plan so you can reload it later.
-        """
-    )
-    st.markdown("### Example Statement Mapping")
-    st.caption(
-        "Map statement numbers directly: current balance → Starting Balance, planned monthly payment → Projected Monthly Payment, expected new purchases → Variable Monthly Spend, and APR (%) from your statement terms."
-    )
-    st.markdown("### Forecast Disclaimer")
-    st.caption(
-        "This forecast is an estimate, not financial advice. Results depend on the accuracy of the values you enter and can change with future spending and payments."
-    )
-    if st.button("Got it — hide this guide"):
-        st.session_state.show_onboarding = False
-        st.rerun()
+render_onboarding()
 
 with st.expander("Load Saved Plan"):
     uploaded_snapshot = st.file_uploader(
@@ -187,55 +113,20 @@ with st.expander("Load Saved Plan"):
     )
 
     if uploaded_snapshot is not None:
+        import_result = load_import_payload(uploaded_snapshot)
 
-        try:
-            imported_data = json.load(uploaded_snapshot)
+        if not import_result["success"]:
+            st.error(import_result["error"])
+        else:
+            if st.button("Restore Imported Session"):
+                restore_imported_session(
+                    import_result["imported_data"],
+                    st.session_state,
+                )
 
-            from validation import validate_import_data
+                st.success("Debt plan imported successfully.")
 
-            valid, error = validate_import_data(imported_data)
-
-            if not valid:
-                st.error(error)
-
-            else:
-                if st.button("Restore Imported Session"):
-
-                    imported_config = deepcopy(imported_data.get("config", {}))
-
-                    imported_transactions = deepcopy(
-                        imported_data.get("transactions", [])
-                    )
-
-                    # Restore isolated session config
-                    st.session_state.config = imported_config
-
-                    # Restore isolated transaction history
-                    st.session_state.transactions = imported_transactions
-
-                    # Restore recurring editor state
-                    st.session_state.recurring_edit = deepcopy(
-                        imported_config.get("recurring", [])
-                    )
-
-                    st.success("Debt plan imported successfully.")
-
-                    st.rerun()
-
-        except JSONDecodeError:
-            st.error(
-                "The uploaded file is not valid JSON. Please upload a valid exported debt-plan file."
-            )
-
-        except UnicodeDecodeError:
-            st.error(
-                "The uploaded file could not be decoded. Please upload a UTF-8 encoded JSON file."
-            )
-
-        except Exception:
-            st.error(
-                "An unexpected error occurred while importing the debt plan."
-            )
+                st.rerun()
 
 with st.expander("Forecast Assumptions"):
     st.subheader("Forecast Assumptions")
@@ -291,97 +182,42 @@ with st.expander("Forecast Assumptions"):
 
 
 
-# If no data, allow user to set starting balance
-if not data:
-    st.subheader("Set Starting Balance")
-
-    start_balance = st.number_input("Starting Balance", min_value=0.0, step=100.0)
-
-    if st.button("Initialize"):
-        if start_balance <= 0:
-            st.warning("Enter a valid starting balance")
-        else:
-            # Store as initial balance (treated as spend to create positive balance)
-            add("spend", start_balance)
-
-            st.success("Starting balance set")
-            st.rerun()
-
-    st.stop()
+render_starting_balance_gate(data)
 
 snapshot = get_engine_snapshot()
 
 if data:
-    latest_transaction = data[-1]
-
-    snapshot = {
-        "statement_balance": float(latest_transaction.get("statement_balance", 0)),
-        "current_balance": float(latest_transaction.get("current_balance", 0)),
-        "total_balance": float(latest_transaction.get("total_balance", 0)),
-        "config": deepcopy(st.session_state.config),
-    }
+    snapshot = build_snapshot_from_latest_transaction(
+        data,
+        deepcopy(st.session_state.config),
+    )
 
 balance = snapshot["total_balance"]
 
 # Initialize initial_balance for current cycle summary
-initial_balance = 0
+initial_balance = calculate_initial_balance(data)
 
-if data:
-    initial_balance = round(
-        float(data[0].get("total_balance", 0)),
-        2,
-    )
-
-recurring_total = round(
-    sum(r.get("amount", 0) for r in st.session_state.config.get("recurring", [])),
-    2,
+recurring_total = calculate_recurring_total(
+    st.session_state.config.get("recurring", []),
 )
 
 st.header("Current Account Status")
 
 # Automatically use current month
-current_month = datetime.today().strftime("%Y-%m")
+current_month = get_current_month()
 
 st.write(f"Showing data for: {current_month}")
 st.caption("Current-cycle transaction summary.")
 
-cycle_data = [r for r in data if r["date"].startswith(current_month)]
+cycle_metrics = calculate_cycle_metrics(data, current_month)
+cycle_data = cycle_metrics["cycle_data"]
 
 if not cycle_data:
     st.info("No transactions yet this month.")
 
-# Exclude initialization transaction from spend totals
-initial_record = data[0] if data else None
-
-spend_transactions = [
-    r for r in cycle_data
-    if r["type"] == "spend" and r != initial_record
-]
-
-payment_transactions = [
-    r for r in cycle_data
-    if r["type"] == "payment"
-]
-
-interest_transactions = [
-    r for r in cycle_data
-    if r["type"] == "interest"
-]
-
-total_spend = round(
-    sum(float(r["amount"]) for r in spend_transactions),
-    2,
-)
-
-total_pay = round(
-    sum(float(r["amount"]) for r in payment_transactions),
-    2,
-)
-
-total_interest_paid = round(
-    sum(float(r["amount"]) for r in interest_transactions),
-    2,
-)
+total_spend = cycle_metrics["total_spend"]
+total_pay = cycle_metrics["total_pay"]
+total_interest_paid = cycle_metrics["total_interest_paid"]
 
 # Split into two rows to prevent truncation
 col1, col2, col3 = st.columns(3)
@@ -393,80 +229,13 @@ col4, col5 = st.columns(2)
 col4.metric("Net", f"${round(total_pay - total_spend,2):,}")
 col5.metric("Fixed Monthly", f"${round(recurring_total,2):,}")
 
-# Add Transactions
-st.header("Add Transaction")
-st.caption("Record spending or payments applied to the account.")
-
-with st.form("add_transaction_form"):
-    col_a, col_b, col_c = st.columns([1,1,1])
-
-    with col_a:
-        txn_type = st.selectbox("Type", ["spend", "payment"]) 
-
-    with col_b:
-        amount = st.number_input("Amount", min_value=0.0, step=1.0, value=0.0)
-
-    with col_c:
-        submit = st.form_submit_button("Add")
-
-    if submit:
-        if amount <= 0:
-            st.warning("Enter an amount greater than 0")
-        else:
-            add(txn_type, float(amount))
-
-            st.success(f"Added {txn_type} of ${amount}")
-            st.rerun()
+render_transaction_form()
 
 # ==================================================
 # FORECAST GUIDANCE
 # ==================================================
 
-with st.expander("How To Use This Forecast"):
-
-    st.caption(
-        "Use real statement estimates to forecast how long payoff may take."
-    )
-
-    st.markdown("### Quick Steps")
-
-    st.markdown(
-        """
-- Enter your current balance
-- Enter a realistic monthly payment
-- Estimate monthly spending
-- Run the simulation
-- Adjust values to compare payoff timelines
-        """
-    )
-
-    st.divider()
-
-    st.markdown("### Example Statement Mapping")
-
-    st.info(
-        "Previous Balance: $12,500\n\n"
-        "Payments: -$1,200\n\n"
-        "Purchases: +$650\n\n"
-        "Interest: +$210\n\n"
-        "Current Balance: $12,160"
-    )
-
-    st.caption(
-        "Recurring charges are fixed monthly bills. Variable spending is flexible day-to-day spending. Close estimates are completely okay."
-    )
-
-    st.divider()
-
-    st.markdown("### Forecast Disclaimer")
-
-    st.markdown(
-        """
-- This is a payoff forecast tool
-- Future spending and payments affect accuracy
-- Results improve when updated regularly
-        """
-    )
+render_forecast_guidance()
 
 # Inputs
 st.header("Forecast Simulation")
@@ -490,14 +259,14 @@ compare_delta = st.number_input(
 )
 st.caption("Try a higher or lower payment amount to compare payoff timelines.")
 
-minimum_viable_payment = round(
-    recurring_total +
-    (balance * (st.session_state.config["apr"] / 12)) +
-    st.session_state.config["safety_payment_buffer"],
-    2,
+readiness_metrics = calculate_forecast_readiness(
+    balance=balance,
+    recurring_total=recurring_total,
+    apr=st.session_state.config["apr"],
+    safety_payment_buffer=st.session_state.config["safety_payment_buffer"],
 )
-
-monthly_interest_estimate = round(balance * (st.session_state.config["apr"] / 12), 2)
+minimum_viable_payment = readiness_metrics["minimum_viable_payment"]
+monthly_interest_estimate = readiness_metrics["monthly_interest_estimate"]
 
 st.subheader("Forecast Readiness")
 
@@ -766,7 +535,7 @@ with st.expander("Save Your Plan"):
     st.download_button(
         label="⬇️ Download Current Plan",
         data=export_json,
-        file_name=f"credit_tracker_session_{datetime.today().strftime('%Y%m%d_%H%M%S')}.json",
+        file_name=build_export_filename(),
         mime="application/json",
         help="Download a complete debt-plan snapshot including transactions and forecasting configuration.",
     )
