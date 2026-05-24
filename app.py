@@ -33,6 +33,7 @@ from state.session_init import (
     initialize_session_state,
     initialize_developer_seed,
     initialize_recurring_editor,
+    load_example_scenario,
 )
 from persistence.session_io import (
     build_export_snapshot,
@@ -74,6 +75,18 @@ DEVELOPER_SEED_MODE = False
 
 render_app_header(DEVELOPER_SEED_MODE)
 
+st.markdown("## Plan Your Credit Card Payoff Path")
+st.caption(
+    "Estimate how spending, payments, and interest may affect your monthly payoff timeline."
+)
+st.caption(
+    "Forecasts are estimates only and not financial advice."
+)
+
+st.info(
+    "**Start here:** Enter your current balance, add expected monthly payment and card spending, run the forecast, then review your estimated payoff path."
+)
+
 # ==================================================
 # SESSION STATE INITIALIZATION
 # ==================================================
@@ -104,11 +117,12 @@ export_snapshot = build_export_snapshot(
 
 export_json = serialize_export_payload(export_snapshot)
 
-render_onboarding()
+load_col, example_col = st.columns([2, 1])
 
-with st.expander("Load Saved Plan"):
+with load_col:
+    st.markdown("### Returning user?")
     uploaded_snapshot = st.file_uploader(
-        "⬆️ Upload Saved Plan",
+        "Upload a saved forecast",
         type=["json"],
         help="Upload a previously exported debt-plan JSON file.",
     )
@@ -124,10 +138,17 @@ with st.expander("Load Saved Plan"):
                     import_result["imported_data"],
                     st.session_state,
                 )
-
                 st.success("Debt plan imported successfully.")
-
                 st.rerun()
+
+with example_col:
+    st.markdown("### New here?")
+    if st.button("Load Example Scenario", use_container_width=True):
+        load_example_scenario(DEFAULT_CONFIG)
+        st.success("Example scenario loaded.")
+        st.rerun()
+
+render_onboarding()
 
 with st.expander("Forecast Assumptions"):
     st.subheader("Forecast Assumptions")
