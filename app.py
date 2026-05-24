@@ -117,36 +117,32 @@ export_snapshot = build_export_snapshot(
 
 export_json = serialize_export_payload(export_snapshot)
 
-load_col, example_col = st.columns([2, 1])
+st.markdown("### Continue a saved forecast")
+uploaded_snapshot = st.file_uploader(
+    "Upload a saved forecast",
+    type=["json"],
+    help="Upload a saved forecast file to continue where you left off.",
+)
 
-with load_col:
-    st.markdown("### Continue a saved forecast")
-    uploaded_snapshot = st.file_uploader(
-        "Upload a saved forecast",
-        type=["json"],
-        help="Upload a saved forecast file to continue where you left off.",
-    )
+if uploaded_snapshot is not None:
+    import_result = load_import_payload(uploaded_snapshot)
 
-    if uploaded_snapshot is not None:
-        import_result = load_import_payload(uploaded_snapshot)
+    if not import_result["success"]:
+        st.error(import_result["error"])
+    else:
+        if st.button("Restore Previous Forecast", use_container_width=True):
+            restore_imported_session(
+                import_result["imported_data"],
+                st.session_state,
+            )
+            st.success("Saved forecast restored successfully.")
+            st.rerun()
 
-        if not import_result["success"]:
-            st.error(import_result["error"])
-        else:
-            if st.button("Restore Previous Forecast"):
-                restore_imported_session(
-                    import_result["imported_data"],
-                    st.session_state,
-                )
-                st.success("Saved forecast restored successfully.")
-                st.rerun()
-
-with example_col:
-    st.markdown("### New here?")
-    if st.button("Load Example Scenario", use_container_width=True):
-        load_example_scenario(DEFAULT_CONFIG)
-        st.success("Example scenario loaded.")
-        st.rerun()
+st.markdown("### New here?")
+if st.button("Load Example Scenario", use_container_width=True):
+    load_example_scenario(DEFAULT_CONFIG)
+    st.success("Example scenario loaded.")
+    st.rerun()
 
 render_onboarding()
 
@@ -188,14 +184,15 @@ total_pay = cycle_metrics["total_pay"]
 total_interest_paid = cycle_metrics["total_interest_paid"]
 
 # Split into two rows to prevent truncation
-col1, col2, col3 = st.columns(3)
-col1.metric("Balance", f"${round(balance,2):,}")
-col2.metric("Spent", f"${round(total_spend,2):,}")
-col3.metric("Paid", f"${round(total_pay,2):,}")
+st.metric("Balance", f"${round(balance,2):,}")
 
-col4, col5 = st.columns(2)
-col4.metric("Net", f"${round(total_pay - total_spend,2):,}")
-col5.metric("Fixed Monthly", f"${round(recurring_total,2):,}")
+status_col1, status_col2 = st.columns(2)
+status_col1.metric("Spent", f"${round(total_spend,2):,}")
+status_col2.metric("Paid", f"${round(total_pay,2):,}")
+
+status_col3, status_col4 = st.columns(2)
+status_col3.metric("Net", f"${round(total_pay - total_spend,2):,}")
+status_col4.metric("Fixed Monthly", f"${round(recurring_total,2):,}")
 
 render_transaction_form()
 st.divider()
@@ -490,24 +487,22 @@ if run_simulation_clicked:
         comparison_balances=comparison_balances,
     )
 
-    st.pyplot(balance_chart)
+    st.pyplot(balance_chart, use_container_width=True)
 
     st.divider()
     st.subheader("Key Forecast Metrics")
 
-    summary_col1, summary_col2, summary_col3 = st.columns(3)
-
-    summary_col1.metric(
+    st.metric(
         "Starting Balance",
         f"${round(balance,2):,}"
     )
 
-    summary_col2.metric(
+    metric_col1, metric_col2 = st.columns(2)
+    metric_col1.metric(
         "Recurring Monthly",
         f"${round(recurring_total,2):,}"
     )
-
-    summary_col3.metric(
+    metric_col2.metric(
         "Projected Interest",
         f"${round(total_interest,2):,}"
     )
@@ -545,7 +540,7 @@ if run_simulation_clicked:
     )
 
     st.subheader("Payoff Duration Comparison")
-    st.pyplot(payoff_chart)
+    st.pyplot(payoff_chart, use_container_width=True)
 
     st.divider()
     st.subheader("Monthly Breakdown")
@@ -579,4 +574,5 @@ if run_simulation_clicked:
         file_name=build_export_filename(),
         mime="application/json",
         help="Save a copy of your forecast so you can restore it later.",
+        use_container_width=True,
     )
