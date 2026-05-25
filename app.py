@@ -55,7 +55,7 @@ st.set_page_config(page_title="Credit Card Payoff Simulator", layout="wide")
 
 DEVELOPER_SEED_MODE = False
 # Replace this URL with the live feedback survey link before deployment
-SURVEY_LINK = "https://REPLACE_WITH_SURVEY_LINK"
+SURVEY_LINK = "https://docs.google.com/forms/d/e/1FAIpQLSd96pYzXKKbKRlkhlYbT6-CCtkdWTbI7RsNu-4RJQ8myaX3UQ/viewform?usp=publish-editor"
 
 # ==================================================
 # DEVELOPER SEED MODE
